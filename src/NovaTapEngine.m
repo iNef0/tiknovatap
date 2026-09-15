@@ -404,18 +404,16 @@ static CGPoint NovaTap_GenerateGaussianPoint(CGPoint center, double sigma, doubl
                     id targetList = object_getIvar(tapGR, targetsIvar);
                     if ([targetList isKindOfClass:[NSMutableArray class]] || [targetList isKindOfClass:[NSArray class]]) {
                         for (id targetObj in (NSArray *)targetList) {
-                            Ivar targetIvar = class_getInstanceVariable([targetObj class], "_target");
-                            Ivar actionIvar = class_getInstanceVariable([targetObj class], "_action");
-                            if (targetIvar && actionIvar) {
-                                id target = object_getIvar(targetObj, targetIvar);
-                                SEL action = (SEL)ptrdiff_t_getIvar(targetObj, actionIvar);
-                                if (target && action && [target respondsToSelector:action]) {
+                            id target = nil;
+                            SEL action = NULL;
+                            object_getInstanceVariable(targetObj, "_target", (void **)&target);
+                            object_getInstanceVariable(targetObj, "_action", (void **)&action);
+                            if (target && action && [target respondsToSelector:action]) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                    [target performSelector:action withObject:tapGR];
+                                [target performSelector:action withObject:tapGR];
 #pragma clang diagnostic pop
-                                    return YES;
-                                }
+                                return YES;
                             }
                         }
                     }
@@ -432,12 +430,6 @@ static CGPoint NovaTap_GenerateGaussianPoint(CGPoint center, double sigma, doubl
     }
 
     return NO;
-}
-
-static inline ptrdiff_t ptrdiff_t_getIvar(id object, Ivar ivar) {
-    ptrdiff_t val = 0;
-    object_getInstanceVariable(object, ivar_getName(ivar), (void **)&val);
-    return val;
 }
 
 - (void)dispatchViaDirectResponderInView:(UIView *)container atPoint:(CGPoint)point dwellTime:(double)dwellTime {
