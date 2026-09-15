@@ -168,7 +168,7 @@
     // 2. Real-time Counter & Quota
     self.counterLabel = [[UILabel alloc] initWithFrame:CGRectMake(14, 46, cardWidth - 28, 28)];
     self.counterLabel.text = @"العداد: 0 / 10,000 (0.0%)";
-    self.counterLabel.font = [UIFont monospacedDigitSystemFontOfSize:14.0 weight:UIFontWeightSemibold];
+    self.counterLabel.font = [UIFont monospacedSystemFontOfSize:14.0 weight:UIFontWeightSemibold];
     self.counterLabel.textColor = [UIColor whiteColor];
     self.counterLabel.textAlignment = NSTextAlignmentCenter;
     [self.containerCard addSubview:self.counterLabel];

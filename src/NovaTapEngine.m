@@ -404,16 +404,21 @@ static CGPoint NovaTap_GenerateGaussianPoint(CGPoint center, double sigma, doubl
                     id targetList = object_getIvar(tapGR, targetsIvar);
                     if ([targetList isKindOfClass:[NSMutableArray class]] || [targetList isKindOfClass:[NSArray class]]) {
                         for (id targetObj in (NSArray *)targetList) {
-                            id target = nil;
-                            SEL action = NULL;
-                            object_getInstanceVariable(targetObj, "_target", (void **)&target);
-                            object_getInstanceVariable(targetObj, "_action", (void **)&action);
-                            if (target && action && [target respondsToSelector:action]) {
+                            Ivar targetIvar = class_getInstanceVariable([targetObj class], "_target");
+                            Ivar actionIvar = class_getInstanceVariable([targetObj class], "_action");
+                            if (targetIvar && actionIvar) {
+                                ptrdiff_t targetOffset = ivar_getOffset(targetIvar);
+                                ptrdiff_t actionOffset = ivar_getOffset(actionIvar);
+                                unsigned char *base = (unsigned char *)(__bridge void *)targetObj;
+                                id target = *(__unsafe_unretained id *)(base + targetOffset);
+                                SEL action = *(SEL *)(base + actionOffset);
+                                if (target && action && [target respondsToSelector:action]) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                                [target performSelector:action withObject:tapGR];
+                                    [target performSelector:action withObject:tapGR];
 #pragma clang diagnostic pop
-                                return YES;
+                                    return YES;
+                                }
                             }
                         }
                     }
