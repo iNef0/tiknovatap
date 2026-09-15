@@ -44,6 +44,7 @@ jobs:
           echo "Using iPhoneOS SDK: $SDK_PATH"
 
           echo "Compiling NovaTap.dylib for arm64..."
+          set +e
           xcrun -sdk iphoneos clang \
             -arch arm64 \
             -isysroot "$SDK_PATH" \
@@ -58,7 +59,28 @@ jobs:
             -install_name "@rpath/NovaTap.dylib" \
             -Isrc \
             src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
-            -o build/Frameworks/NovaTap.dylib
+            -o build/Frameworks/NovaTap.dylib 2>&1 | tee /tmp/compile.log
+          COMPILE_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          echo "### Compiler Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/compile.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          if [ $COMPILE_EXIT -ne 0 ] || [ ! -f build/Frameworks/NovaTap.dylib ]; then
+            echo "Clang failed with exit code $COMPILE_EXIT. Trying Theos make..."
+            export THEOS=~/theos
+            make clean
+            make FINALPACKAGE=1
+            THEOS_OUTPUT=$(find .theos/obj -name "NovaTap.dylib" | head -n 1)
+            if [ -n "$THEOS_OUTPUT" ]; then
+              cp "$THEOS_OUTPUT" build/Frameworks/NovaTap.dylib
+            else
+              echo "Both compilation methods failed!"
+              exit 1
+            fi
+          fi
 
           ls -lh build/Frameworks/NovaTap.dylib
           file build/Frameworks/NovaTap.dylib
@@ -145,8 +167,17 @@ jobs:
           retention-days: 14
 
       - name: Upload Standalone NovaTap.dylib Artifact
+        if: always() && hashFiles('build/Frameworks/NovaTap.dylib') != ''
         uses: actions/upload-artifact@v4
         with:
           name: NovaTap_dylib_arm64_arm64e
           path: build/Frameworks/NovaTap.dylib
           retention-days: 30
+
+      - name: Upload Build Log Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/compile.log
+          if-no-files-found: ignore
