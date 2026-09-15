@@ -41,48 +41,35 @@ jobs:
         run: |
           mkdir -p build/Frameworks
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "Using iPhoneOS SDK at: $SDK_PATH"
 
-          echo "Compiling NovaTap.dylib for arm64..."
-          xcrun -sdk iphoneos clang \
-            -arch arm64 \
-            -dynamiclib \
-            -isysroot "$SDK_PATH" \
-            -miphoneos-version-min=14.0 \
-            -fobjc-arc -O3 \
-            -framework UIKit \
-            -framework Foundation \
-            -framework CoreGraphics \
-            -framework AVFoundation \
-            -framework AudioToolbox \
-            -install_name "@rpath/NovaTap.dylib" \
-            -Isrc \
-            src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
-            -o build/Frameworks/NovaTap_arm64.dylib
-
-          echo "Attempting arm64e slice compilation..."
-          if xcrun -sdk iphoneos clang \
-            -arch arm64e \
-            -dynamiclib \
-            -isysroot "$SDK_PATH" \
-            -miphoneos-version-min=14.0 \
-            -fobjc-arc -O3 \
-            -framework UIKit \
-            -framework Foundation \
-            -framework CoreGraphics \
-            -framework AVFoundation \
-            -framework AudioToolbox \
-            -install_name "@rpath/NovaTap.dylib" \
-            -Isrc \
-            src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
-            -o build/Frameworks/NovaTap_arm64e.dylib 2>/dev/null; then
-              echo "Creating Fat Binary (arm64 + arm64e)..."
-              lipo -create build/Frameworks/NovaTap_arm64.dylib build/Frameworks/NovaTap_arm64e.dylib -output build/Frameworks/NovaTap.dylib
+          export THEOS=~/theos
+          echo "Attempting build via Theos..."
+          if make; then
+            echo "Theos build succeeded!"
+            THEOS_DYLIB=$(find .theos/obj -name "NovaTap.dylib" | head -n 1)
+            cp "$THEOS_DYLIB" build/Frameworks/NovaTap.dylib
           else
-              echo "Using arm64 binary (Native ARM64 architecture natively executed by A15 Bionic)..."
-              cp build/Frameworks/NovaTap_arm64.dylib build/Frameworks/NovaTap.dylib
+            echo "Falling back to direct Clang compilation targeting iOS..."
+            xcrun -sdk iphoneos clang \
+              -target arm64-apple-ios14.0 \
+              -dynamiclib \
+              -isysroot "$SDK_PATH" \
+              -miphoneos-version-min=14.0 \
+              -fobjc-arc -O3 \
+              -framework UIKit \
+              -framework Foundation \
+              -framework CoreGraphics \
+              -framework AVFoundation \
+              -framework AudioToolbox \
+              -install_name "@rpath/NovaTap.dylib" \
+              -Isrc \
+              src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
+              -o build/Frameworks/NovaTap.dylib
           fi
 
-          # Verify Mach-O architectures
+          # Verify binary
+          ls -lh build/Frameworks/NovaTap.dylib
           lipo -info build/Frameworks/NovaTap.dylib
 
       - name: Install Mach-O Injection Tool (insert_dylib)
