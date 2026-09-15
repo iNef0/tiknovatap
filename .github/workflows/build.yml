@@ -37,39 +37,31 @@ jobs:
             rm $THEOS/sdks/iPhoneOS16.5.sdk.tar.xz
           fi
 
-      - name: Build NovaTap.dylib (Universal Binary)
+      - name: Build NovaTap.dylib
         run: |
           mkdir -p build/Frameworks
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "Using iPhoneOS SDK at: $SDK_PATH"
+          echo "Using iPhoneOS SDK: $SDK_PATH"
 
-          export THEOS=~/theos
-          echo "Attempting build via Theos..."
-          if make; then
-            echo "Theos build succeeded!"
-            THEOS_DYLIB=$(find .theos/obj -name "NovaTap.dylib" | head -n 1)
-            cp "$THEOS_DYLIB" build/Frameworks/NovaTap.dylib
-          else
-            echo "Falling back to direct Clang compilation targeting iOS..."
-            xcrun -sdk iphoneos clang \
-              -target arm64-apple-ios14.0 \
-              -dynamiclib \
-              -isysroot "$SDK_PATH" \
-              -miphoneos-version-min=14.0 \
-              -fobjc-arc -O3 \
-              -framework UIKit \
-              -framework Foundation \
-              -framework CoreGraphics \
-              -framework AVFoundation \
-              -framework AudioToolbox \
-              -install_name "@rpath/NovaTap.dylib" \
-              -Isrc \
-              src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
-              -o build/Frameworks/NovaTap.dylib
-          fi
+          echo "Compiling NovaTap.dylib for arm64..."
+          xcrun -sdk iphoneos clang \
+            -arch arm64 \
+            -isysroot "$SDK_PATH" \
+            -miphoneos-version-min=14.0 \
+            -dynamiclib \
+            -fobjc-arc -O3 \
+            -framework UIKit \
+            -framework Foundation \
+            -framework CoreGraphics \
+            -framework AVFoundation \
+            -framework AudioToolbox \
+            -install_name "@rpath/NovaTap.dylib" \
+            -Isrc \
+            src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
+            -o build/Frameworks/NovaTap.dylib
 
-          # Verify binary
           ls -lh build/Frameworks/NovaTap.dylib
+          file build/Frameworks/NovaTap.dylib
           lipo -info build/Frameworks/NovaTap.dylib
 
       - name: Install Mach-O Injection Tool (insert_dylib)
