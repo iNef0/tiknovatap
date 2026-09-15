@@ -1,0 +1,150 @@
+name: NovaTap Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Direct URL to decrypted BHTikTok / TikTok IPA (Optional)"
+        required: false
+        default: ""
+
+jobs:
+  build-and-package:
+    runs-on: macos-14
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Xcode Environment
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Setup Theos Toolchain & iOS SDKs
+        run: |
+          export THEOS=~/theos
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          curl -fsSL -o $THEOS/sdks/iPhoneOS16.5.sdk.tar.xz https://github.com/theos/sdks/releases/download/v16.5/iPhoneOS16.5.sdk.tar.xz || true
+          if [ -f "$THEOS/sdks/iPhoneOS16.5.sdk.tar.xz" ]; then
+            tar -xf $THEOS/sdks/iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks/
+            rm $THEOS/sdks/iPhoneOS16.5.sdk.tar.xz
+          fi
+
+      - name: Build NovaTap.dylib (ARM64 + ARM64e Fat Binary)
+        run: |
+          mkdir -p build/Frameworks
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+
+          echo "Compiling NovaTap.dylib for arm64 and arm64e (PAC support)..."
+          xcrun -sdk iphoneos clang \
+            -arch arm64 -arch arm64e \
+            -dynamiclib \
+            -isysroot "$SDK_PATH" \
+            -miphoneos-version-min=14.0 \
+            -fobjc-arc -O3 \
+            -framework UIKit \
+            -framework Foundation \
+            -framework CoreGraphics \
+            -framework AVFoundation \
+            -framework AudioToolbox \
+            -install_name "@rpath/NovaTap.dylib" \
+            -Isrc \
+            src/NovaTapEngine.m src/NovaTapHUD.m src/NovaTapEntry.m \
+            -o build/Frameworks/NovaTap.dylib
+
+          # Verify Mach-O architectures
+          lipo -info build/Frameworks/NovaTap.dylib
+
+      - name: Install Mach-O Injection Tool (insert_dylib)
+        run: |
+          git clone https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib
+          cd /tmp/insert_dylib
+          xcodebuild -project insert_dylib.xcodeproj -target insert_dylib -configuration Release
+          sudo cp build/Release/insert_dylib /usr/local/bin/insert_dylib
+          which insert_dylib
+
+      - name: Acquire Target Decrypted IPA
+        id: get_ipa
+        run: |
+          mkdir -p input_ipa
+          if [ -n "${{ github.event.inputs.ipa_url }}" ]; then
+            echo "Downloading IPA from provided URL..."
+            curl -fsSL "${{ github.event.inputs.ipa_url }}" -o input_ipa/target.ipa
+            echo "has_ipa=true" >> $GITHUB_OUTPUT
+          else
+            FOUND_IPA=$(find . -maxdepth 2 -name "*.ipa" | head -n 1)
+            if [ -n "$FOUND_IPA" ]; then
+              echo "Found local IPA: $FOUND_IPA"
+              cp "$FOUND_IPA" input_ipa/target.ipa
+              echo "has_ipa=true" >> $GITHUB_OUTPUT
+            else
+              echo "No IPA provided or found in repository. Only NovaTap.dylib will be released."
+              echo "has_ipa=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Sanitize and Inject IPA (App ID Quota Protection)
+        if: steps.get_ipa.outputs.has_ipa == 'true'
+        run: |
+          echo "Extracting IPA..."
+          unzip -q input_ipa/target.ipa -d extracted_app
+
+          APP_DIR=$(find extracted_app/Payload -maxdepth 1 -name "*.app" | head -n 1)
+          if [ -z "$APP_DIR" ]; then
+            echo "Error: Could not locate .app directory in Payload"
+            exit 1
+          fi
+
+          echo "Target App: $APP_DIR"
+          APP_EXEC_NAME=$(defaults read "$APP_DIR/Info.plist" CFBundleExecutable)
+          APP_EXEC="$APP_DIR/$APP_EXEC_NAME"
+
+          echo "Sanitizing App ID quota killers for free Apple ID (SideStore)..."
+          # CRITICAL: Completely strip PlugIns and Watch app extensions to avoid 10 App ID limit
+          rm -rf "$APP_DIR/PlugIns"
+          rm -rf "$APP_DIR/Watch"
+          rm -rf "$APP_DIR/Extensions"
+
+          # Remove existing signatures and provisions
+          rm -rf "$APP_DIR/_CodeSignature"
+          rm -f "$APP_DIR/embedded.mobileprovision"
+
+          # Prepare Frameworks directory
+          mkdir -p "$APP_DIR/Frameworks"
+
+          # Copy NovaTap.dylib
+          cp build/Frameworks/NovaTap.dylib "$APP_DIR/Frameworks/NovaTap.dylib"
+          chmod 755 "$APP_DIR/Frameworks/NovaTap.dylib"
+
+          # Inject NovaTap.dylib into main Mach-O executable
+          echo "Injecting NovaTap.dylib into $APP_EXEC..."
+          insert_dylib --all-yes --inplace "@executable_path/Frameworks/NovaTap.dylib" "$APP_EXEC"
+
+          # Repackage into clean, install-ready IPA
+          echo "Packaging sanitized and injected IPA..."
+          cd extracted_app
+          zip -qry ../TikTok_BHTikTok_NovaTap.ipa Payload/
+          cd ..
+          ls -lh TikTok_BHTikTok_NovaTap.ipa
+
+      - name: Upload Injected IPA Artifact
+        if: steps.get_ipa.outputs.has_ipa == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TikTok_BHTikTok_NovaTap_IPA
+          path: TikTok_BHTikTok_NovaTap.ipa
+          retention-days: 14
+
+      - name: Upload Standalone NovaTap.dylib Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovaTap_dylib_arm64_arm64e
+          path: build/Frameworks/NovaTap.dylib
+          retention-days: 30

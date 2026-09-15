@@ -1,0 +1,9 @@
+Package: com.novatap.live
+Name: NovaTap
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Crash-proof, PAC-resilient live engagement engine for TikTok.
+Maintainer: NovaTap Labs
+Author: NovaTap
+Section: Tweaks
