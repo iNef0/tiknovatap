@@ -15,6 +15,7 @@ on:
 jobs:
   build-and-package:
     runs-on: macos-14
+    permissions: write-all
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -63,10 +64,19 @@ jobs:
           COMPILE_EXIT=${PIPESTATUS[0]}
           set -e
 
-          echo "### Compiler Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat /tmp/compile.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "=== CLANG COMPILATION LOG ==="
+          cat /tmp/compile.log
+          echo "============================="
+
+          # Save log to logs branch
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B logs
+          cp /tmp/compile.log ./build_error.txt
+          git add build_error.txt
+          git commit -m "Build error log [skip ci]" || true
+          git push -f origin logs || true
+          git checkout main || true
 
           if [ $COMPILE_EXIT -ne 0 ] || [ ! -f build/Frameworks/NovaTap.dylib ]; then
             echo "Clang failed with exit code $COMPILE_EXIT. Trying Theos make..."
