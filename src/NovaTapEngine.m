@@ -443,19 +443,31 @@ static CGPoint NovaTap_GenerateGaussianPoint(CGPoint center, double sigma, doubl
         hitView = container;
     }
 
-    UITouch *syntheticTouch = [[UITouch alloc] init];
-    UIEvent *syntheticEvent = [[UIEvent alloc] init];
+    id syntheticTouch = nil;
+    id syntheticEvent = nil;
+    @try {
+        Class touchClass = objc_getClass("UITouch");
+        if (touchClass) {
+            syntheticTouch = ((id (*)(id, SEL))objc_msgSend)([touchClass alloc], sel_registerName("init"));
+        }
+        Class eventClass = objc_getClass("UIEvent");
+        if (eventClass) {
+            syntheticEvent = ((id (*)(id, SEL))objc_msgSend)([eventClass alloc], sel_registerName("init"));
+        }
+    } @catch (NSException *e) {}
+
+    NSSet *touches = syntheticTouch ? [NSSet setWithObject:syntheticTouch] : [NSSet set];
 
     // Simulate Touch Down
     if ([hitView respondsToSelector:@selector(touchesBegan:withEvent:)]) {
-        [hitView touchesBegan:[NSSet setWithObject:syntheticTouch] withEvent:syntheticEvent];
+        [hitView touchesBegan:touches withEvent:syntheticEvent];
     }
 
     // Simulate Dwell Duration
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(dwellTime * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         @try {
             if ([hitView respondsToSelector:@selector(touchesEnded:withEvent:)]) {
-                [hitView touchesEnded:[NSSet setWithObject:syntheticTouch] withEvent:syntheticEvent];
+                [hitView touchesEnded:touches withEvent:syntheticEvent];
             }
         } @catch (NSException *e) {
             // Defensive recovery
