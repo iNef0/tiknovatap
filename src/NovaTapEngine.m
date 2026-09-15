@@ -407,10 +407,9 @@ static CGPoint NovaTap_GenerateGaussianPoint(CGPoint center, double sigma, doubl
                             Ivar targetIvar = class_getInstanceVariable([targetObj class], "_target");
                             Ivar actionIvar = class_getInstanceVariable([targetObj class], "_action");
                             if (targetIvar && actionIvar) {
-                                ptrdiff_t targetOffset = ivar_getOffset(targetIvar);
+                                id target = object_getIvar(targetObj, targetIvar);
                                 ptrdiff_t actionOffset = ivar_getOffset(actionIvar);
-                                unsigned char *base = (unsigned char *)(__bridge void *)targetObj;
-                                id target = *(__unsafe_unretained id *)(base + targetOffset);
+                                const char *base = (const char *)(__bridge void *)targetObj;
                                 SEL action = *(SEL *)(base + actionOffset);
                                 if (target && action && [target respondsToSelector:action]) {
 #pragma clang diagnostic push
